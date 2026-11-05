@@ -1,0 +1,25 @@
+{
+  "dataset": "Thcrull/win-exe-malware-analysis",
+  "revision": "main",
+  "dataset_license_as_listed": "MIT",
+  "reports_only": true,
+  "no_executable_samples_downloaded": true,
+  "requested": {
+    "benign": 60,
+    "malware": 60
+  },
+  "downloaded": {
+    "benign": 60,
+    "malware": 60,
+    "total": 120
+  },
+  "benign_source_counts": {
+    "Benign-NET": 15,
+    "PortableApps": 15,
+    "PortableAppsInstallers": 15,
+    "SysinternalsSuite": 15
+  },
+  "timestamp_note": "observed_at is CAPE execution time when present, not first-seen time; blank means unavailable.",
+  "max_report_size_mb": 30.0,
+  "seed": 42
+}
