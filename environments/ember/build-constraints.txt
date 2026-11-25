@@ -1,0 +1,3 @@
+# Pin the tools used by uv's isolated build of the official EMBER archive.
+setuptools==75.3.2
+wheel==0.45.1

@@ -4,4 +4,5 @@ scikit-learn>=1.4,<2
 matplotlib>=3.8,<4
 networkx>=3.2,<4
 torch>=2.2,<3
+torch-geometric>=2.5,<3
 huggingface_hub>=0.25

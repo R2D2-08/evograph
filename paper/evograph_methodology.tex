@@ -1,0 +1,229 @@
+\documentclass[journal]{IEEEtran}
+\usepackage{amsmath,amssymb,booktabs,url}
+
+\title{EvoGraph: Evidence-Aware Static--Dynamic Malware Representation}
+\author{EvoGraph Project}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+EvoGraph specifies an evidence-aware integration of portable-executable
+features and sandbox telemetry for binary malware classification. Its
+methodological contribution is a six-type schema combining source-order
+behavioral windows, typed resource interactions, explicit missingness, and
+a controlled flat-vector comparison. Standard relational message passing
+and type-specific attention integrate these representations; no new graph
+operator is claimed. This article describes implemented methodology and
+an evaluation protocol, not empirical detection results.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Malware representation, heterogeneous graphs, multimodal learning.
+\end{IEEEkeywords}
+
+\section{Methodological Scope}
+Static features summarize executable structure, whereas sandbox reports
+describe activity observed under a particular execution environment.
+Flattening these observations removes process ownership and local order;
+constructing overly connected graphs can instead invent relationships.
+EvoGraph integrates both modalities while distinguishing observed
+execution, inventory evidence, and unavailable telemetry. The contribution
+is this evidence-aware representation and its comparison design, rather
+than an established performance improvement or a claim of first use.
+
+Inputs are user-supplied CAPE JSON reports~\cite{cape}, binary labels, and
+optional static sidecars or binaries for read-only parsing. Sandbox
+execution and CAPE API transport are outside scope; no API client or
+sandbox is claimed here.
+
+\section{Evidence and Flat Representation}
+Preparation preserves normalized evidence, source pointers, report hashes,
+metadata, and complete original EMBER dictionaries; original reports remain
+external and must be retained. Available executable hashes are checked
+across inputs, conflicting identities or labels are rejected, and duplicate
+identities are excluded. Metadata alone cannot verify report--binary
+correspondence when the report omits its target hash. Labels, sandbox
+verdicts, and signatures are not model features.
+
+The static vector has 2,381 dimensions from official EMBER feature version
+2~\cite{emberrepo}. Anderson and Roth's original paper describes EMBER2017
+feature version 1~\cite{ember}, not this later schema; its 2,351-dimensional
+vectors are not padded. The flat comparator concatenates static features
+with a 2,048-dimensional dynamic representation (Table~\ref{tab:blocks}),
+giving 4,429 dimensions. D1 is deterministic; D2 uses stable signed BLAKE2b
+hashing of normalized executed-API frequencies. D3--D10 are learned jointly
+with the classifier, making exported dynamic vectors checkpoint-dependent,
+not pretrained features.
+
+\begin{table}[t]
+\caption{Flat Dynamic Representation: 2,048 Dimensions}
+\label{tab:blocks}
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}llr@{}}
+\toprule
+Block & Encoding / aggregation & Dim.\\
+\midrule
+D1 Statistics & Observations and availability & 128\\
+D2 API identity & Signed frequency hash & 512\\
+D3 API sequences & BiGRU; event/stream attention & 256\\
+D4 Files & Path CharCNN; mean/max & 256\\
+D5 Processes & Name/command; mean/max & 256\\
+D6 Registry & Hierarchical BiLSTM; mean/max & 128\\
+D7 Network & Identifier CharCNN; mean/max & 128\\
+D8 Other resources & Typed CharCNN; mean/max & 128\\
+D9 Arguments & Typed semantics; mean/max & 128\\
+D10 Payloads & Mask-aware static; mean/max & 128\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Unavailable sections differ from observed empty sections. Missing static
+vectors remain null in prepared data; masks and learned availability
+embeddings accompany numerical placeholders, rather than presenting zeros
+as measured features. D1 retains coverage flags. Independently, the graph's
+binary node receives 14 flags: 12 section-coverage indicators and separate
+trace/window truncation indicators. Payloads retain per-vector static
+availability and report-level coverage.
+
+\section{Evidence-Aware Heterogeneous Graph}
+Each report yields exactly six node types: \emph{binary, process, API,
+window, resource, payload}. The binary node encodes static features through
+$2381\!\to\!512\!\to\!256$, adding availability and projected telemetry.
+Process inputs concatenate a 64-dimensional name CharCNN, a 32-dimensional
+command projection, and 32 local statistics. API inputs combine identity
+(64), category (8), and imported/resolved flags (2), projected to 128.
+Windows use a BiGRU with 128 units per direction,
+event attention at 256 dimensions, and projection to 128. Resource nodes
+combine kind-specific string encoders, type embeddings, and local evidence
+statistics at 128 dimensions. Payloads use mask-aware
+$2381\!\to\!64\!\to\!128$ projections. All types then project to hidden
+width 256.
+
+Windows contain at most 32 retained source-call rows within one
+process/thread; unidentified threads form a separate stream per process.
+Source order is preserved without global timestamp sorting. Repeated calls
+remain compressed rows. Imports and resolved APIs identify capabilities,
+not executions; count-only \texttt{apistats} can supply frequencies but
+never fabricate call sequences.
+
+Resource identity is keyed separately by kind and observed string.
+Encoder-only masking of local usernames and literal IP endpoints does not
+merge graph identities. Resource edges require explicit names, paths, or
+pretty values: numeric API handles are never guessed into bindings.
+Summary/network inventories do not invent process ownership or event edges.
+
+The 17 forward relation triples are binary-to-process \emph{launches},
+binary-to-API \emph{imports}, binary-to-payload \emph{produces};
+process-to-process \emph{spawns}, process-to-API \emph{calls},
+process-to-window \emph{executes}, process-to-resource \emph{loads/accesses},
+process-to-payload \emph{drops}; window-to-API \emph{contains\_api},
+window-to-window \emph{next\_window}, and window-to-resource
+\emph{reads, writes, deletes, modifies, connects\_to, accesses}.
+Each has an exact reverse with independent parameters, yielding 34 directed
+relation types.
+
+Static imports and runtime windows meet at shared API-symbol nodes, exposing
+declared-versus-observed behavior without equating imports with calls.
+Separating symbols from sequence windows allows the model to combine API
+identity, local order, and resource context rather than duplicating one
+whole-report embedding. This cross-view, evidence-constrained construction
+is the central methodological hypothesis to be tested.
+
+\section{Relational Integration}
+Three relation-mean R-GCN-style layers~\cite{rgcn} operate at width 256.
+For incoming neighbors $\mathcal N_r(v)$, node type $t=t(v)$, and layer
+$\ell$, the implemented update is
+\begin{align}
+m_{v,r}^{(\ell)}
+&=\frac{\sum_{u\in\mathcal N_r(v)}W_r^{(\ell)}h_u^{(\ell)}}
+{\max(1,|\mathcal N_r(v)|)},\label{eq:mean}\\
+z_v^{(\ell)}
+&=W_{0,t}^{(\ell)}h_v^{(\ell)}+b_{0,t}^{(\ell)}
++\sum_r m_{v,r}^{(\ell)},\notag\\
+h_v^{(\ell+1)}
+&=\operatorname{LN}_{t}^{(\ell)}\!\left(h_v^{(\ell)}+
+\operatorname{Drop}_{0.2}\!\left(\operatorname{GELU}(z_v^{(\ell)})\right)\right).
+\label{eq:residual}
+\end{align}
+Empty sums contribute zero. Means are normalized per relation, then summed,
+not divided by total degree or the number of relations. PyG implements
+this with relation-specific mean SAGE aggregators without root transforms,
+bias, or normalization, summed by \texttt{HeteroConv}; self transforms,
+residuals, and layer normalization are type-specific. This instantiates
+established relational aggregation, not a new GNN operator.
+
+Let $H_v=h_v^{(3)}$ and $V_t$ denote nodes of non-binary type $t$.
+Type-specific attention and fusion are
+\begin{align}
+\alpha_{v,t}&=\frac{\exp(a_t^\top H_v)}
+{\sum_{u\in V_t}\exp(a_t^\top H_u)},\notag\\
+p_t&=\mathbf{1}_{|V_t|>0}\,P_t\!\left(\sum_{v\in V_t}
+\alpha_{v,t}H_v\right)+c_t,\label{eq:pool}\\
+g&=\phi_{512}\!\left([H_b\Vert p_{\rm proc}\Vert p_{\rm api}
+\Vert p_{\rm win}\Vert p_{\rm res}\Vert p_{\rm pay}]\right),\notag\\
+\widehat p&=\sigma\!\left(f_{576\to256\to64\to1}
+([g\Vert\psi_{128\to64}(s)])\right).\label{eq:fusion}
+\end{align}
+Attention is evaluated only for nonempty types. Here $P_t$ is an affine
+256-to-128 projection; empty pools are zero before
+$c_t$, which is a learned coverage embedding only for payloads and zero
+otherwise. Thus $g$ projects $256+5(128)=896$ dimensions to 512.
+The maps $\phi$ and $\psi$ use affine--GELU--dropout and affine--GELU,
+respectively; $f$ uses GELU/dropout between linear layers.
+The hybrid appends only projected D1 statistics $s$, producing 576
+dimensions: it neither computes nor appends the full 2,048-dimensional
+dynamic branch. Graph-only removes D1, retaining missingness and local
+statistics; static-only and dynamic-only are additional ablations.
+
+\section{Protocol and Current Status}
+Default stratified splits share approximately 60/20/20 train/validation/test
+partitions across modes, with both labels required in every partition.
+Non-mask D1 values receive $\log(1+x)$ and training-only standardization;
+static moments use present training sample vectors, also scaling payloads.
+Masks remain unchanged. Weighted binary cross-entropy and AdamW update
+encoders only on training samples. Validation loss controls early stopping;
+validation F1 selects the decision threshold. Test data neither fit
+preprocessing nor select checkpoints or thresholds. The comparison controls
+partitions and provenance, not parameter count or receptive field.
+
+Family-disjoint evaluation requires explicit groups for every record,
+including benign application annotations. Chronological evaluation requires
+genuine observation datetimes and rejects tied boundaries or one-class
+partitions; CAPE execution time is not sample first-seen time. Extraction
+provenance must record the official EMBER revision and dependency profile,
+used consistently for training and inference; the local LIEF~0.12.3 profile
+is not an exact EMBER2018/LIEF~0.9.0 replication.
+
+No trained research model or full multimodal benchmark is currently
+available. Existing tests and smoke checks exercise plumbing only, not
+detection effectiveness. Defaults cap retention at 20,000 source rows and
+256 windows;
+window retention favors process/thread prefixes, inventories can exceed
+retained traces, and caps do not bound graph memory. Label quality,
+missingness, and sandbox/source confounding require auditing before empirical
+claims. HGT comparisons and incremental learning are deferred.
+
+\begin{thebibliography}{4}
+\bibitem{cape}
+CAPE Sandbox, ``CAPE Sandbox Book,'' documentation. [Online]. Available:
+\url{https://capev2.readthedocs.io/en/latest/}
+
+\bibitem{emberrepo}
+Elastic, ``Elastic malware benchmark for empowering researchers,'' official
+repository, revision \path{d97a0b523de02f3fe5ea6089d080abacab6ee931}.
+[Online]. Available: \url{https://github.com/elastic/ember}
+
+\bibitem{ember}
+H.~S. Anderson and P.~Roth, ``EMBER: An open dataset for training static PE
+malware machine learning models,'' arXiv:1804.04637, 2018.
+
+\bibitem{rgcn}
+M.~Schlichtkrull, T.~N. Kipf, P.~Bloem, R.~van den Berg, I.~Titov, and
+M.~Welling, ``Modeling relational data with graph convolutional networks,''
+arXiv:1703.06103, 2017.
+\end{thebibliography}
+
+\end{document}

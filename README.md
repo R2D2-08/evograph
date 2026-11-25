@@ -1,5 +1,9 @@
 # CAPE-Evolve: Real 120-report prototype
 
+> **New architecture:** The additive [multimodal EvoGraph pipeline](MULTIMODAL.md) is implemented in `run_multimodal.py` and `multimodal/`. See its guide for static/dynamic features, the heterogeneous graph, commands, and current data limitations. The original `run.py` baseline and replay workflow documented below remain unchanged.
+
+For binary-to-static extraction, use the [verified, isolated EMBER environment](environments/ember/README.md). The short methodology report is available as [LaTeX](paper/evograph_methodology.tex) and [PDF](paper/evograph_methodology.pdf).
+
 This version is intended for the Semester 7 project. It replaces the synthetic-only demo path with a downloader for **120 real CAPEv2 JSON reports** from a public dataset. It downloads reports only; it does **not** download or execute EXE/DLL samples.
 
 ## Dataset used

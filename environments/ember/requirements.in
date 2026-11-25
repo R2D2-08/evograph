@@ -1,0 +1,18 @@
+# Dedicated CPython 3.11.14 extraction environment, not the model environment.
+# Keep every transitive dependency pinned; regenerate requirements.lock with uv.
+ember @ https://github.com/elastic/ember/archive/d97a0b523de02f3fe5ea6089d080abacab6ee931.zip#sha256=8eb5e9dbf9982c9453cf75e7f3d323756c4572d3e804b26cc1dad2c46acc8eed
+numpy==1.23.5
+scipy==1.9.3
+scikit-learn==1.1.3
+# Distribution version; lief.__version__ must be 0.12.3-39115d10.
+lief==0.12.3
+pandas==1.5.3
+lightgbm==3.3.5
+tqdm==4.66.6
+joblib==1.4.2
+threadpoolctl==3.5.0
+python-dateutil==2.9.0.post0
+pytz==2024.2
+six==1.16.0
+wheel==0.45.1
+setuptools==75.3.2
